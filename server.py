@@ -77,10 +77,11 @@ async def main():
     os.makedirs("qlogs", exist_ok=True)
     cfg = QuicConfiguration(is_client=False, alpn_protocols=["custom-quic"], quic_logger=QuicFileLogger("qlogs"))
     cfg.max_datagram_frame_size = 65536
-    # cfg.load_cert_chain("cert.pem", "key.pem")  # real deployment
+    cfg.load_cert_chain("cert.pem", "key.pem")  # real deployment
 
     await serve(host="0.0.0.0", port=8001, configuration=cfg, create_protocol=DualChannelProtocol)
     await asyncio.Future()
 
 if __name__ == "__main__":
+    print("Starting QUIC server on 0.0.0.0:8001")
     asyncio.run(main())

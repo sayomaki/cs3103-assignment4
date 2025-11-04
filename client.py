@@ -3,7 +3,7 @@ from gamenet import GameNetQUICClient
 from common import random_pokemon_payload
 
 async def main(target:str, pps:float, duration:float, rel_ratio:float, verify:bool):
-    api = GameNetQUICClient(verify=verify)
+    api = GameNetQUICClient(alpn="custom-quic",verify=False)
     await api.connect(target)
     try:
         interval = 1.0/pps
@@ -17,6 +17,7 @@ async def main(target:str, pps:float, duration:float, rel_ratio:float, verify:bo
         await api.close()
 
 if __name__ == "__main__":
+
     ap = argparse.ArgumentParser()
     ap.add_argument("--target", default="127.0.0.1:4433")
     ap.add_argument("--pps", type=float, default=30.0)
@@ -24,4 +25,5 @@ if __name__ == "__main__":
     ap.add_argument("--rel-ratio", type=float, default=0.5)
     ap.add_argument("--verify", action="store_true")
     args = ap.parse_args()
+    print(f"Target: {args.target}, PPS: {args.pps}, Duration: {args.duration}s, Reliable Ratio: {args.rel_ratio}, Verify: {args.verify}")
     asyncio.run(main(args.target, args.pps, args.duration, args.rel_ratio, args.verify))

@@ -1,1 +1,7 @@
 .venv/
+cert.pem
+key.pem
+__pycache__/
+*.pyc
+reliable_stream.csv
+unreliable_dgram.csv
