@@ -19,7 +19,7 @@ async def main(target:str, pps:float, duration:float, rel_ratio:float, verify:bo
 if __name__ == "__main__":
 
     ap = argparse.ArgumentParser()
-    ap.add_argument("--target", default="127.0.0.1:4433")
+    ap.add_argument("--target", default="127.0.0.1:8001")
     ap.add_argument("--pps", type=float, default=30.0)
     ap.add_argument("--duration", type=float, default=10.0)
     ap.add_argument("--rel-ratio", type=float, default=0.5)
