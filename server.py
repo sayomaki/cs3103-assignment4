@@ -14,7 +14,7 @@ HDR_FMT = ">BHI"  # ch(1), seq(2), ts_ms(4)
 HDR_SIZE = struct.calcsize(HDR_FMT)
 
 def _stamp(): return datetime.now().isoformat(timespec="milliseconds")
-def _peer(proto): 
+def _peer(proto):
     info = proto._transport.get_extra_info("peername")
     return str(info) if info else "peer=?"
 
@@ -25,11 +25,11 @@ def _ensure_csv(path):
                 "timestamp","peer","channel","seqno","lat_ms","jitter_ms",
                 "payload_len","payload_b64","preview_utf8"
             ])
-            
+
 def _append(path, row):
     with open(path, "a", newline="", encoding="utf-8") as f:
         csv.writer(f).writerow(row)
-        
+
 def _b64(b: bytes) -> str: return base64.b64encode(b).decode("ascii")
 
 def _preview(b: bytes, n=64) -> str: return b.decode("utf-8", "replace")[:n]
@@ -46,13 +46,13 @@ class DualChannelProtocol(QuicConnectionProtocol):
         super().__init__(*a, **k)
         # reliable reorder buffer
         self.expected = 0
-        self.buf = {}             
+        self.buf = {}
         self.gap_started_ms = None
-        self.gap_deadline_ms = 200  
+        self.gap_deadline_ms = 200
         # jitter estimators
         self.j_rel = _JitterRFC3550()
         self.j_unr = _JitterRFC3550()
-        
+
     def _deliver_in_order(self, recv_ts_ms:int):
         # deliver all contiguous from expected
         while self.expected in self.buf:
@@ -73,19 +73,18 @@ class DualChannelProtocol(QuicConnectionProtocol):
             self.gap_started_ms = None
 
             self._deliver_in_order(recv_ts_ms)
-    
+
     def quic_event_received(self, event):
-        
+
         if isinstance(event, HandshakeCompleted):
-            tp = getattr(self._quic, "_peer_transport_parameters", None)
-            print("Client max_dgram:", getattr(tp, "max_datagram_frame_size", 0))
-            print("Server local max_dgram:", getattr(self._quic, "_local_max_datagram_frame_size", 0))
-            
-            max_dgram = getattr(tp, "max_datagram_frame_size", 0) or 0
+            print("Client max_dgram:", getattr(self._quic, "_remote_max_datagram_frame_size", 0))
+            print("Server local max_dgram:", getattr(self._quic._configuration, "max_datagram_frame_size", 0))
+
+            max_dgram = getattr(self._quic, "_remote_max_datagram_frame_size", 0) or 0
             ch = "DGRAM-OK" if max_dgram else "DGRAM-NOT-SUPPORTED"
             _append(DGRAM_CSV, [_stamp(), _peer(self), ch, "", "", "", "", "", ""])
             return
-        
+
         if isinstance(event, StreamDataReceived):
             data = event.data
             recv_ts = int(time.time()*1000)
@@ -99,12 +98,13 @@ class DualChannelProtocol(QuicConnectionProtocol):
                 self.buf[seq] = (ts_ms, payload)
                 self._deliver_in_order(recv_ts)
             else:
+                print(ch)
                 # fallback
                 lat = recv_ts - ts_ms
                 jit = round(self.j_unr.update(ts_ms, recv_ts), 3)
                 _append(DGRAM_CSV, [_stamp(), _peer(self), "dgram(fallback-stream)", seq, lat, jit,
                                     len(payload), _b64(payload), _preview(payload)])
-                
+
         elif isinstance(event, DatagramFrameReceived):
             data = event.data
             recv_ts = int(time.time()*1000)
@@ -126,7 +126,7 @@ async def main():
     _ensure_csv(STREAM_CSV); _ensure_csv(DGRAM_CSV)
     os.makedirs("qlogs", exist_ok=True)
     cfg = QuicConfiguration(is_client=False, alpn_protocols=["custom-quic"], max_datagram_frame_size=65535, quic_logger=QuicFileLogger("qlogs"))
-    
+
     cfg.load_cert_chain("cert.pem", "key.pem")  # real deployment
 
     await serve(host="0.0.0.0", port=8001, configuration=cfg, create_protocol=DualChannelProtocol)
