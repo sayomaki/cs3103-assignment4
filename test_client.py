@@ -27,18 +27,15 @@ async def connected(conn, channel_id: int, packet_count: int, interval: float):
     conn.on_close(conn_closed)
 
     for i in range(packet_count):
-        print(conn.stats())
+        if not i % 5:
+            print(conn.stats())
+
         if channel_id == 0:
-            print(f"[{i+1}] Sending reliable stream...")
             await conn.send(random_pokemon_payload(GameNetProtocol.RELIABLE.value),GameNetProtocol.RELIABLE)
-            await asyncio.sleep(1)
-            
+            await asyncio.sleep(0.2)
         else:
-            print(f"[{i+1}] Sending unreliable datagram...")
             await conn.send(random_pokemon_payload(GameNetProtocol.UNRELIABLE.value),GameNetProtocol.UNRELIABLE)
-            await asyncio.sleep(1)
-    
-    await conn.close()
+            await asyncio.sleep(0.2)
 
 async def main():
     parser = argparse.ArgumentParser(description="GameNet QUIC test client")

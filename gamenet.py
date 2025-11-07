@@ -3,7 +3,7 @@ CS3103 - GameNetAPI based on QUIC
 
 @authors Reanee Chua, Ng Hong Ray, Ryan Warwick Han, Zhang Yao
 
-This library provides both a reliable & unreliable communication link between clients & server, built 
+This library provides both a reliable & unreliable communication link between clients & server, built
 on top of QUIC with a lightweight protocol.
 """
 
@@ -38,26 +38,26 @@ class GameNetMetricsWrapper:
         self.bytes_sent = 0
         self.bytes_received = 0
         self.start_time = time.time()
-    
+
     def log_event(self, *, category: str, event: str, data: dict):
         self._trace.log_event(category=category, event=event, data=data)
-        
+
         # track metrics in real-time
         if event == "packet_sent":
             self.packets_sent += 1
             header = data.get("raw", {})
             if "length" in header:
                 self.bytes_sent += header["length"]
-        
+
         elif event == "packet_received":
             self.packets_received += 1
             header = data.get("raw", {})
             if "length" in header:
                 self.bytes_received += header["length"]
-        
+
         elif event == "packet_lost":
             self.packets_lost += 1
-    
+
     def get_metrics(self):
         elapsed = time.time() - self.start_time
         metrics = {
@@ -68,16 +68,16 @@ class GameNetMetricsWrapper:
             'bytes_received': self.bytes_received,
             'elapsed_seconds': elapsed
         }
-        
+
         if elapsed > 0:
             metrics['tx_mbps'] = (self.bytes_sent * 8) / (elapsed * 1_000_000)
             metrics['rx_mbps'] = (self.bytes_received * 8) / (elapsed * 1_000_000)
-        
+
         if self.packets_sent > 0:
             metrics['loss_rate'] = self.packets_lost / self.packets_sent
-        
+
         return metrics
-    
+
     # Delegate all other methods to the original trace
     def __getattr__(self, name):
         return getattr(self._trace, name)
@@ -92,17 +92,17 @@ class GameNetMetricsLogger(QuicLogger):
     def __init__(self):
         super().__init__()
         self.metrics_wrapper = None
-    
+
     def start_trace(self, is_client: bool, odcid: bytes):
         original_trace = super().start_trace(is_client=is_client, odcid=odcid)
-        
+
         # wrap created trace with custom metrics tracker
         self.metrics_wrapper = GameNetMetricsWrapper(original_trace)
         self._traces.remove(original_trace)
         self._traces.append(self.metrics_wrapper)
-        
+
         return self.metrics_wrapper
-    
+
     def get_metrics(self):
         if self.metrics_wrapper:
             return self.metrics_wrapper.get_metrics()
@@ -165,7 +165,9 @@ class GameNetConnection:
             'bytes_sent': metrics['bytes_sent'],
             'bytes_received': metrics['bytes_received'],
             'elapsed_time': metrics['elapsed_seconds'],
-            'loss_rate': metrics['loss_rate']
+            'loss_rate': metrics['loss_rate'],
+            'tx_mbps': metrics['tx_mbps'],
+            'rx_mbps': metrics['rx_mbps']
         }
 
 
@@ -173,13 +175,13 @@ class GameNetServerProtocol(QuicConnectionProtocol):
     """
     GameNetServerProtocol - Handles gamenet protocol packets on both client & server side
 
-    Protocol header specification (8 Bytes): 
+    Protocol header specification (8 Bytes):
     0                                                                          8
     |---------|---------|---------|--------|--------|--------|--------|--------|
     | chn(1B) | sequence no. (2B) |           timestamp (4B)          | unused |
     |---------|---------|---------|--------|--------|--------|--------|--------|
     """
-    def __init__(self, *args, gamenet, **kwargs): 
+    def __init__(self, *args, gamenet, **kwargs):
         # client - connected to server, server - new connection from client
         super().__init__(*args, **kwargs)
         self.gamenet = gamenet
@@ -195,7 +197,7 @@ class GameNetServerProtocol(QuicConnectionProtocol):
         if isinstance(event, HandshakeCompleted):
             # connection established for reliable
             self._call_handler_async(self.gamenet._on_connect, self.connection)
-        elif isinstance(event, StreamDataReceived): 
+        elif isinstance(event, StreamDataReceived):
             # received in-order reliable packet
             self._handle_reliable_data(event.data)
         elif isinstance(event, DatagramFrameReceived):
@@ -216,12 +218,12 @@ class GameNetServerProtocol(QuicConnectionProtocol):
         if self.connection._on_data_received is None:
             # user did not provider handler, ignore packet
             return
-        
+
         self._call_handler_async(
-            self.connection._on_data_received, 
-            GameNetProtocol.RELIABLE, 
-            data, 
-            timestamp, 
+            self.connection._on_data_received,
+            GameNetProtocol.RELIABLE,
+            data,
+            timestamp,
             seq
         )
 
@@ -232,20 +234,20 @@ class GameNetServerProtocol(QuicConnectionProtocol):
         if self.connection._on_data_received is None:
             # user did not provider handler, ignore packet
             return
-        
+
         self._call_handler_async(
-            self.connection._on_data_received, 
-            GameNetProtocol.UNRELIABLE, 
-            data, 
-            timestamp, 
+            self.connection._on_data_received,
+            GameNetProtocol.UNRELIABLE,
+            data,
+            timestamp,
             seq
-        )    
+        )
 
     def _handle_conn_closed(self):
         if self.connection._on_close is None:
             # user did not provider handler, ignore
             return
-        
+
         self._call_handler_async(self.connection._on_close)
 
     def _call_handler_async(self, handler, *args):
@@ -263,8 +265,8 @@ class GameNet:
         self._logger = GameNetMetricsLogger()
 
         self._config = QuicConfiguration(
-            is_client = self._is_client, 
-            alpn_protocols = [GameNet.ALPN], 
+            is_client = self._is_client,
+            alpn_protocols = [GameNet.ALPN],
             max_datagram_frame_size = self.datagram_frame_size,
             quic_logger = self._logger
         )
@@ -284,24 +286,24 @@ class GameNet:
     def is_client(self):
         return self._is_client
 
-    async def listen(self, port = None, host = '127.0.0.1'):
+    async def listen(self, port = None, host = '0.0.0.0'):
         if self._is_client:
             raise Exception('Cannot listen in client mode!')
 
         if port is None:
             raise Exception('No port provided to listen!')
-        
+
         self._instance = await serve(
-            host = host, 
-            port = port, 
-            configuration = self._config, 
+            host = host,
+            port = port,
+            configuration = self._config,
             create_protocol = partial(GameNetServerProtocol, gamenet = self)
         )
 
     async def connect(self, host, port):
         if not self._is_client:
             raise Exception('Cannot connect in server mode!')
-        
+
         if not host:
             raise Exception('Invalid host to connect to!')
 
@@ -309,8 +311,8 @@ class GameNet:
             raise Exception('No port to connect to!')
 
         self._context = connect(
-            host, port, 
-            configuration = self._config, 
+            host, port,
+            configuration = self._config,
             create_protocol = partial(GameNetServerProtocol, gamenet = self)
         )
         self._instance = await self._context.__aenter__()
@@ -321,7 +323,7 @@ class GameNet:
             self._context = None
             
             self._instance = None
-            
+
 
 def Server(certs, on_connect):
     return GameNet(is_client = False, cert_file = certs[0], key_file = certs[1], on_connect = on_connect)

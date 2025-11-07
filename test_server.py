@@ -6,23 +6,17 @@ certs = ("cert.pem", "key.pem")
 
 async def new_client_connected(conn):
     print("New client connected.")
-    counter = 8
 
     async def conn_closed():
         print("Client disconnected.")
 
     async def process_data(channel, data, seq, timestamp):
-        nonlocal counter
         if channel is GameNetProtocol.RELIABLE:
             # reliable data
             print(f"Received: [{seq}, {timestamp}, reliable]: {data.decode()}")
         else:
             # unreliable data
             print(f"Received: [{seq}, {timestamp}, unreliable]: {data.decode()}")
-
-        counter -= 1
-        if counter == 0:
-            await conn.close()
 
     conn.on_data(process_data)
     conn.on_close(conn_closed)
