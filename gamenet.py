@@ -147,7 +147,7 @@ class GameNetConnection:
 
     async def close(self):
         if self.gamenet._is_client:
-            self.gamenet.close()
+            await self.gamenet.close()
         else:
             self._conn.close()
             self._conn.transmit()
@@ -315,10 +315,11 @@ class GameNet:
         )
         self._instance = await self._context.__aenter__()
 
-    async def close():
-        if self._is_client:
-            await self._context.__aexit__()
+    async def close(self):
+        if self._is_client and self._context is not None:
+            await self._context.__aexit__(None, None, None)  # <-- pass 3 args
             self._context = None
+            
             self._instance = None
             
 
