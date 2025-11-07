@@ -1,5 +1,5 @@
 import asyncio, argparse, random, time
-from gamenet import GameNetQUICClient
+from api import GameNetQUICClient
 from common import random_pokemon_payload
 
 async def main(target:str, pps:float, duration:float, rel_ratio:float, verify:bool):
