@@ -15,8 +15,7 @@ def parse_channel_id(x: str) -> GameNetProtocol:
         return GameNetProtocol.UNRELIABLE
     raise argparse.ArgumentTypeError("channel-id must be: 0|reliable or 1|unreliable")
 
-async def connected(conn, *, channel: GameNetProtocol, packet_count: int, interval: float):
-    alternate = False
+async def connected(conn, channel_id: int, packet_count: int, interval: float):
     run = True
     print("Connected to server.")
 
@@ -27,41 +26,36 @@ async def connected(conn, *, channel: GameNetProtocol, packet_count: int, interv
 
     conn.on_close(conn_closed)
 
-    while run:
+    for i in range(packet_count):
         print(conn.stats())
-        if alternate:
-            print("Sending world unreliable...")
-            await conn.send(random_pokemon_payload(GameNetProtocol.UNRELIABLE.value),GameNetProtocol.UNRELIABLE)
-            await asyncio.sleep(1)
-            alternate = False
-        else:
-            print("Sending hello reliable...")
+        if channel_id == 0:
+            print(f"[{i+1}] Sending reliable stream...")
             await conn.send(random_pokemon_payload(GameNetProtocol.RELIABLE.value),GameNetProtocol.RELIABLE)
             await asyncio.sleep(1)
-            alternate = not alternate
+            
+        else:
+            print(f"[{i+1}] Sending unreliable datagram...")
+            await conn.send(random_pokemon_payload(GameNetProtocol.UNRELIABLE.value),GameNetProtocol.UNRELIABLE)
+            await asyncio.sleep(1)
+    
+    await conn.close()
 
 async def main():
     parser = argparse.ArgumentParser(description="GameNet QUIC test client")
-    parser.add_argument("--host", default="127.0.0.1")
-    parser.add_argument("--port", type=int, default=8001)
-    parser.add_argument("--cert", default="cert.pem")
-    parser.add_argument("--key", default="key.pem")
-    parser.add_argument("--channel-id", type=parse_channel_id, default="reliable",
-                        help="0|reliable or 1|unreliable")
-    parser.add_argument("--packet-count", type=int, default=10,
-                        help="number of packets to send")
-    parser.add_argument("--interval", type=float, default=1.0,
-                        help="seconds between packets")
+    parser.add_argument("--host", default="127.0.0.1", help="Server IP")
+    parser.add_argument("--port", type=int, default=8001, help="Server port")
+    parser.add_argument("--cert", default="cert.pem", help="Certificate file")
+    parser.add_argument("--key", default="key.pem", help="Private key file")
+    parser.add_argument("--channel-id", type=int, choices=[0, 1], default=0, help="0 = reliable (stream), 1 = unreliable (datagram)")
+    parser.add_argument("--packet-count", type=int, default=10, help="Number of packets to send")
+    parser.add_argument("--interval", type=float, default=1.0, help="Seconds between packets")
     args = parser.parse_args()
 
     certs = (args.cert, args.key)
 
-    # pass args into the connected callback via closure
     async def on_connected(conn):
-        await connected(conn, channel=args.channel_id,
-                        packet_count=args.packet_count,
-                        interval=args.interval)
-    
+        await connected(conn, args.channel_id, args.packet_count, args.interval)
+
     client = gamenet.Client(certs, on_connected)
     await client.connect(args.host, args.port)
     await asyncio.Future()
