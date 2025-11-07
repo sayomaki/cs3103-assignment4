@@ -1,5 +1,6 @@
 import asyncio
 import gamenet
+import random
 from gamenet import GameNetProtocol
 
 certs = ("cert.pem", "key.pem")
@@ -18,8 +19,11 @@ async def new_client_connected(conn):
             print(f"Received: [{seq}, {timestamp}, reliable]: {data.decode()}")
         else:
             # unreliable data
-            print(f"Received: [{seq}, {timestamp}, unreliable]: {data.decode()}")
-
+            # Simulate packet loss
+            if random.random() < 0.3:        # drop ~30%
+                conn.skip_unreliable()
+            else:   
+                print(f"Received: [{seq}, {timestamp}, unreliable]: {data.decode()}")
         counter -= 1
         if counter == 0:
             await conn.close()
@@ -29,6 +33,7 @@ async def new_client_connected(conn):
 
 async def main():
     server = gamenet.Server(certs, new_client_connected)
+    print("Starting server on port 8001...")
     await server.listen(8001)
     await asyncio.Future()
 

@@ -1,4 +1,5 @@
 import asyncio
+from common import random_pokemon_payload
 import gamenet
 
 from gamenet import GameNetProtocol
@@ -21,14 +22,14 @@ async def connected(conn):
         print(conn.stats())
         if alternate:
             print("Sending world unreliable...")
-            await conn.send(b'world!', GameNetProtocol.UNRELIABLE)
+            await conn.send(random_pokemon_payload(GameNetProtocol.UNRELIABLE.value),GameNetProtocol.UNRELIABLE)
             await asyncio.sleep(1)
             alternate = False
         else:
             print("Sending hello reliable...")
-            await conn.send(b'Hello ', GameNetProtocol.RELIABLE)
+            await conn.send(random_pokemon_payload(GameNetProtocol.RELIABLE.value),GameNetProtocol.RELIABLE)
             await asyncio.sleep(1)
-            alternate = True
+            alternate = not alternate
 
 async def main():
     client = gamenet.Client(certs, connected)
