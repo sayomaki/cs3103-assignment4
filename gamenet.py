@@ -11,7 +11,6 @@ import ssl
 import struct
 import time
 
-from  collections import deque
 from enum import Enum
 from functools import partial
 from aioquic.asyncio import serve, connect, QuicConnectionProtocol
@@ -128,10 +127,6 @@ class GameNetConnection:
     def on_close(self, handler):
         self._on_close = handler
 
-    # Simulate packet loss for unreliable channel by skipping sequence numbers
-    def skip_unreliable(self, n=1):
-        self._conn.seq_unreliable = (self._conn.seq_unreliable + n) & 0xFFFF
-    
     async def send(self, data, flags):
         timestamp = struct.pack('<I', int(time.time())) # timestamp in secs
 
@@ -139,22 +134,16 @@ class GameNetConnection:
             seq = struct.pack('<H', self._conn.seq_reliable)
             self._conn.seq_reliable += 1
 
-            header = b'\0' + seq + timestamp + b'\0' 
-            payload = header + data
-            
-            self._conn._quic.send_stream_data(self._conn.reliable_stream_id, payload)
+            header = b'\0' + seq + timestamp + b'\0'
+            self._conn._quic.send_stream_data(self._conn.reliable_stream_id, header + data)
             self._conn.transmit() # no buffering, send immediately
-            self._conn._tx_hist.append((self._conn._now(), len(payload)))
-            
         elif flags is GameNetProtocol.UNRELIABLE:
             seq = struct.pack('<H', self._conn.seq_unreliable)
             self._conn.seq_unreliable += 1
 
             header = b'\1' + seq + timestamp + b'\0'
-            payload = header + data
-            self._conn._quic.send_datagram_frame(payload)
+            self._conn._quic.send_datagram_frame(header + data)
             self._conn.transmit() # no buffering, send immediately
-            self._conn._tx_hist.append((self._conn._now(), len(payload)))
 
     async def close(self):
         if self.gamenet._is_client:
@@ -165,26 +154,18 @@ class GameNetConnection:
 
     def stats(self):
         stats = self._conn._quic._loss
-        
-        tx_bytes = self._conn._bytes_in_window(self._conn._tx_hist)
-        rx_bytes = self._conn._bytes_in_window(self._conn._rx_hist)
-        win = self._conn._win_secs
-        tx_bps = (tx_bytes * 8) / win
-        rx_bps = (rx_bytes * 8) / win
-
-        rcv = self._conn._unrel_rcv
-        lost = self._conn._unrel_lost
-        loss_rate = (lost / (lost + rcv)) if (lost + rcv) > 0 else 0.0
-        
+        metrics = self.gamenet._logger.get_metrics()
         return {
             'rtt_latest': stats._rtt_latest,
             'rtt_avg': stats._rtt_smoothed,
             'rtt_min': stats._rtt_min,
-            "tx_bps_5s": tx_bps,
-            "rx_bps_5s": rx_bps,
-            "unrel_recv": rcv,
-            "unrel_lost": lost,
-            "unrel_loss_rate": loss_rate,
+            'packets_sent': metrics['packets_sent'],
+            'packets_received': metrics['packets_received'],
+            'packets_lost': metrics['packets_lost'],
+            'bytes_sent': metrics['bytes_sent'],
+            'bytes_received': metrics['bytes_received'],
+            'elapsed_time': metrics['elapsed_seconds'],
+            'loss_rate': metrics['loss_rate']
         }
 
 
@@ -209,14 +190,6 @@ class GameNetServerProtocol(QuicConnectionProtocol):
         self.seq_unreliable = 0
 
         self.reliable_stream_id = self._quic.get_next_available_stream_id(is_unidirectional = False)
-        
-        # stats
-        self._tx_hist = deque(maxlen=4096)   # (ts, bytes)
-        self._rx_hist = deque(maxlen=4096)
-        self._win_secs = 5.0
-        self._unrel_expected = 0
-        self._unrel_rcv = 0
-        self._unrel_lost = 0
 
     def quic_event_received(self, event):
         if isinstance(event, HandshakeCompleted):
@@ -239,7 +212,7 @@ class GameNetServerProtocol(QuicConnectionProtocol):
     def _handle_reliable_data(self, data):
         channel, seq, timestamp = self.process_header(data[:8])
         data = data[8:]
-        self._rx_hist.append((self._now(), len(data)))
+
         if self.connection._on_data_received is None:
             # user did not provider handler, ignore packet
             return
@@ -255,14 +228,7 @@ class GameNetServerProtocol(QuicConnectionProtocol):
     def _handle_unreliable_data(self, data):
         channel, seq, timestamp = self.process_header(data[:8])
         data = data[8:]
-        self._rx_hist.append((self._now(), len(data)))
-        
-        # packet loss accounting (UNRELIABLE only)
-        lost, nxt = self._adv_expected(self._unrel_expected, seq)
-        self._unrel_lost += lost
-        self._unrel_expected = nxt
-        self._unrel_rcv += 1
-        
+
         if self.connection._on_data_received is None:
             # user did not provider handler, ignore packet
             return
@@ -285,26 +251,6 @@ class GameNetServerProtocol(QuicConnectionProtocol):
     def _call_handler_async(self, handler, *args):
         loop = self._loop
         loop.create_task(handler(*args))
-    
-    def _now(self) -> float:
-        return time.time()
-
-    def _bytes_in_window(self, hist) -> int:
-        cutoff = self._now() - self._win_secs
-        # drop old
-        while hist and hist[0][0] < cutoff:
-            hist.popleft()
-        return sum(b for _, b in hist)
-
-    def _adv_expected(self, cur, got):
-        # returns lost_count, next_expected (uint16 wrap)
-        MOD = 1 << 16
-        if got == cur:
-            return 0, (got + 1) % MOD
-        # distance ahead with wrap
-        diff = (got - cur) % MOD
-        # if diff == 0 handled above; else packets lost = diff
-        return diff, (got + 1) % MOD
 
 
 class GameNet:
@@ -369,7 +315,7 @@ class GameNet:
         )
         self._instance = await self._context.__aenter__()
 
-    async def close(self):
+    async def close():
         if self._is_client:
             await self._context.__aexit__()
             self._context = None
