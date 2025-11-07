@@ -9,7 +9,7 @@ openssl req -x509 -newkey rsa:2048 -nodes -keyout key.pem -out cert.pem -days 36
 
 ## To Run Client 
 ```bash
-python client.py --target 127.0.0.1:8001 --pps 10 --duration 10 --rel-ratio 0.5
+python test_client.py --host 127.0.0.1 --port 8001 --cert mycert.pem --key mykey.pem
 ```
 
 ## To Run Server
