@@ -17,7 +17,6 @@ async def new_client_connected(conn):
         if channel is GameNetProtocol.RELIABLE:
             # reliable data
             print(f"Received: [{seq}, {timestamp}, reliable]: {data.decode()}")
-            await conn.send(b"ACK:" + data, GameNetProtocol.RELIABLE)      # echo
         else:
             # unreliable data
             # Simulate packet loss
@@ -25,8 +24,6 @@ async def new_client_connected(conn):
                 conn.skip_unreliable()
             else:   
                 print(f"Received: [{seq}, {timestamp}, unreliable]: {data.decode()}")
-                await conn.send(b"ACK:" + data, GameNetProtocol.UNRELIABLE)    # echo
-
         counter -= 1
         if counter == 0:
             await conn.close()
