@@ -29,6 +29,7 @@ async def new_client_connected(conn):
 
 async def main():
     server = gamenet.Server(certs, new_client_connected)
+    print("Starting server on port 8001...")
     await server.listen(8001)
     await asyncio.Future()
 
