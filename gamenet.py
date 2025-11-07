@@ -17,6 +17,7 @@ from functools import partial
 from aioquic.asyncio import serve, connect, QuicConnectionProtocol
 from aioquic.quic.configuration import QuicConfiguration
 from aioquic.quic.events import StreamDataReceived, DatagramFrameReceived, HandshakeCompleted, ConnectionTerminated
+from aioquic.quic.logger import QuicLogger
 
 class GameNetProtocol(Enum):
     """
@@ -24,6 +25,89 @@ class GameNetProtocol(Enum):
     """
     RELIABLE = 0
     UNRELIABLE = 1
+
+
+class GameNetMetricsWrapper:
+    """
+    GameNetMetricsWrapper - actual class that keeps tracks of packets and data
+    """
+    def __init__(self, original_trace):
+        self._trace = original_trace
+        self.packets_sent = 0
+        self.packets_received = 0
+        self.packets_lost = 0
+        self.bytes_sent = 0
+        self.bytes_received = 0
+        self.start_time = time.time()
+    
+    def log_event(self, *, category: str, event: str, data: dict):
+        self._trace.log_event(category=category, event=event, data=data)
+        
+        # track metrics in real-time
+        if event == "packet_sent":
+            self.packets_sent += 1
+            header = data.get("raw", {})
+            if "length" in header:
+                self.bytes_sent += header["length"]
+        
+        elif event == "packet_received":
+            self.packets_received += 1
+            header = data.get("raw", {})
+            if "length" in header:
+                self.bytes_received += header["length"]
+        
+        elif event == "packet_lost":
+            self.packets_lost += 1
+    
+    def get_metrics(self):
+        elapsed = time.time() - self.start_time
+        metrics = {
+            'packets_sent': self.packets_sent,
+            'packets_received': self.packets_received,
+            'packets_lost': self.packets_lost,
+            'bytes_sent': self.bytes_sent,
+            'bytes_received': self.bytes_received,
+            'elapsed_seconds': elapsed
+        }
+        
+        if elapsed > 0:
+            metrics['tx_mbps'] = (self.bytes_sent * 8) / (elapsed * 1_000_000)
+            metrics['rx_mbps'] = (self.bytes_received * 8) / (elapsed * 1_000_000)
+        
+        if self.packets_sent > 0:
+            metrics['loss_rate'] = self.packets_lost / self.packets_sent
+        
+        return metrics
+    
+    # Delegate all other methods to the original trace
+    def __getattr__(self, name):
+        return getattr(self._trace, name)
+
+
+class GameNetMetricsLogger(QuicLogger):
+    """
+    GameNetMetricsLogger - wrapper class around QuicLogger to log information about the connection.
+
+    Used for collecting metrics and info about the channel.
+    """
+    def __init__(self):
+        super().__init__()
+        self.metrics_wrapper = None
+    
+    def start_trace(self, is_client: bool, odcid: bytes):
+        original_trace = super().start_trace(is_client=is_client, odcid=odcid)
+        
+        # wrap created trace with custom metrics tracker
+        self.metrics_wrapper = GameNetMetricsWrapper(original_trace)
+        self._traces.remove(original_trace)
+        self._traces.append(self.metrics_wrapper)
+        
+        return self.metrics_wrapper
+    
+    def get_metrics(self):
+        if self.metrics_wrapper:
+            return self.metrics_wrapper.get_metrics()
+        return {}
 
 
 class GameNetConnection:
@@ -230,10 +314,13 @@ class GameNet:
 
     def __init__(self, *, is_client, cert_file, key_file, verify_cert = True, on_connect):
         self._is_client = is_client
+        self._logger = GameNetMetricsLogger()
+
         self._config = QuicConfiguration(
             is_client = self._is_client, 
             alpn_protocols = [GameNet.ALPN], 
-            max_datagram_frame_size = self.datagram_frame_size
+            max_datagram_frame_size = self.datagram_frame_size,
+            quic_logger = self._logger
         )
 
         self._config.load_cert_chain(cert_file, key_file)
