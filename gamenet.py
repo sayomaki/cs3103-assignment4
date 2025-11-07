@@ -71,9 +71,9 @@ class GameNetConnection:
     def stats(self):
         stats = self._conn._quic._loss
         return {
-            'rtt_latest': stats.rtt_latest,
-            'rtt_avg': stats.rtt_smoothed,
-            'rtt_min': stats.rtt_min
+            'rtt_latest': stats._rtt_latest,
+            'rtt_avg': stats._rtt_smoothed,
+            'rtt_min': stats._rtt_min
         }
 
 
@@ -92,7 +92,6 @@ class GameNetServerProtocol(QuicConnectionProtocol):
         super().__init__(*args, **kwargs)
         self.gamenet = gamenet
         self.connection = GameNetConnection(gamenet, self)
-        self.rtts = [] # stores RTTs to compute jitter
 
         # sequence numbers
         self.seq_reliable = 0
