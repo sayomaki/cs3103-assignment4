@@ -1,5 +1,6 @@
 import asyncio
 import gamenet
+import random
 from gamenet import GameNetProtocol
 
 certs = ("cert.pem", "key.pem")
@@ -16,9 +17,15 @@ async def new_client_connected(conn):
         if channel is GameNetProtocol.RELIABLE:
             # reliable data
             print(f"Received: [{seq}, {timestamp}, reliable]: {data.decode()}")
+            await conn.send(b"ACK:" + data, GameNetProtocol.RELIABLE)      # echo
         else:
             # unreliable data
-            print(f"Received: [{seq}, {timestamp}, unreliable]: {data.decode()}")
+            # Simulate packet loss
+            if random.random() < 0.3:        # drop ~30%
+                conn.skip_unreliable()
+            else:   
+                print(f"Received: [{seq}, {timestamp}, unreliable]: {data.decode()}")
+                await conn.send(b"ACK:" + data, GameNetProtocol.UNRELIABLE)    # echo
 
         counter -= 1
         if counter == 0:
