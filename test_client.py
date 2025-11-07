@@ -27,15 +27,15 @@ async def connected(conn, channel_id: int, packet_count: int, interval: float):
     conn.on_close(conn_closed)
 
     for i in range(packet_count):
-        if not i % 5:
+        if not i % 5: #show stats every 5 packets
             print(conn.stats())
 
         if channel_id == 0:
             await conn.send(random_pokemon_payload(GameNetProtocol.RELIABLE.value),GameNetProtocol.RELIABLE)
-            await asyncio.sleep(0.2)
+            await asyncio.sleep(interval)
         else:
             await conn.send(random_pokemon_payload(GameNetProtocol.UNRELIABLE.value),GameNetProtocol.UNRELIABLE)
-            await asyncio.sleep(0.2)
+            await asyncio.sleep(interval)
 
 async def main():
     parser = argparse.ArgumentParser(description="GameNet QUIC test client")
